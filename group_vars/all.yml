@@ -1,0 +1,6 @@
+minikubeurl: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+minikuberpm: minikube-latest.x86_64.rpm
+minikubebin: minikube-linux-amd64
+installpath: /usr/local/bin
+#tmp_directory: "{{ lookup('env', 'TMPDIR') | default('/tmp',true) }}"
+tmpdir: /tmp

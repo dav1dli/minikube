@@ -1,0 +1,125 @@
+---
+- name: Install minikube
+  hosts: local
+  connection: local
+  gather_facts: true
+  
+  tasks:
+    - fail:
+        msg: Minikube can be installed only on a hypervisor host
+      when: ansible_virtualization_role != "host"
+    - name: Get CPU virtualization
+      shell: grep -E 'vmx|svm' /proc/cpuinfo
+      register: hypervisor_enabled
+      ignore_errors: yes
+    - fail:
+        msg: CPU Hypervisor is not enabled
+      when: hypervisor_enabled.rc != 0
+    - name: install KVM packages
+      yum:
+        name: "{{ packages }}"
+        state: present
+      vars:
+        packages:
+        - "@virt"
+        - virt-top
+        - libguestfs-tools
+      become: yes
+    - name: add the current user to libvirt group
+      user:
+        name: "{{ ansible_user }}"
+        groups: libvirt
+        append: yes
+      become: yes
+    - name: check if kubectl exists
+      command: which kubectl
+      register: kubectl_installed
+      ignore_errors: yes
+      
+    - name: Setup kubectl
+      block:
+        - name: Get kubectl version file
+          get_url:
+            url: "https://storage.googleapis.com/kubernetes-release/release/stable.txt"
+            dest: "{{ tmpdir }}"
+        - name: Set version
+          shell: cat "{{ tmpdir }}/stable.txt"
+          register: kubectl_ver
+        - set_fact:
+            kubectl_version={{ kubectl_ver.stdout }}
+        - debug: var=kubectl_version
+          run_once: true
+        - name: Download kubectl
+          get_url:
+            url: "https://storage.googleapis.com/kubernetes-release/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+            dest: "{{ tmpdir }}"
+        - name: Install kubectl
+          copy:
+            src: "{{ tmpdir }}/kubectl"
+            dest: "{{ installpath }}/kubectl"
+            mode: "0755"
+            owner: "root"
+            group: "root"
+            remote_src: yes
+          become: yes
+      when: kubectl_installed.rc != 0
+    - name: check if minikube exists
+      command: which minikube
+      register: minikube_installed
+      ignore_errors: yes
+    - name: Setup minikube
+      block:
+        - name: Download minikube
+          get_url:
+            url: "{{ minikubeurl }}"
+            dest: "{{ tmpdir }}"
+        - name: Install minikube
+          copy:
+            src: "{{ tmpdir }}/{{ minikubebin }}"
+            dest: "{{ installpath }}/minikube"
+            mode: "0755"
+            owner: "root"
+            group: "root"
+          become: yes
+      when: minikube_installed.rc != 0
+
+    - name: libvirtd service
+      block:
+        - name: Enable libvirtd service
+          service:
+            name: libvirtd
+            enabled: yes
+        - name: Start libvirtd service
+          service:
+            name: libvirtd
+            state: started
+      become: yes
+
+    - name: Check minikube status
+      command: minikube status
+      ignore_errors: yes
+      register: minikube_running
+      args:
+        chdir: "{{ ansible_user_dir }}"
+    - name: Start minikube
+      command: minikube start
+      args:
+        chdir: "{{ ansible_user_dir }}"
+      register: minikube_out
+      when: minikube_running.rc != 0
+
+    - name: check if helm exists
+      command: which helm
+      register: helm_installed
+      ignore_errors: yes      
+    - name: Setup Helm
+      block:
+        - name: Download Helm
+          get_url:
+            url: "https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3"
+            dest: "{{ tmpdir }}/get_helm.sh"
+            mode: 0755
+        - name: Install Helm
+          command: "{{ tmpdir }}/get_helm.sh"
+      when: helm_installed.rc != 0
+      

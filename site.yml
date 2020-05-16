@@ -1,0 +1,4 @@
+---
+# Install minikube local k8s cluster
+
+- import_playbook: playbooks/setup-kubectl.yml
